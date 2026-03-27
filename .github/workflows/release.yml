@@ -17,7 +17,7 @@ jobs:
   release:
     runs-on: macos-latest
     env:
-      APP_NAME: openmoan
+      APP_NAME: OpenMoan
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -36,43 +36,33 @@ jobs:
             tag="${GITHUB_REF_NAME}"
           fi
 
-          version="${tag#v}"
-          archive="${APP_NAME}-${tag}-macos.zip"
-          checksum="${archive}.sha256"
+          dmg="${APP_NAME}-${tag}-macos.dmg"
+          checksum="${dmg}.sha256"
 
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
-          echo "archive=${archive}" >> "$GITHUB_OUTPUT"
+          echo "dmg=${dmg}" >> "$GITHUB_OUTPUT"
           echo "checksum=${checksum}" >> "$GITHUB_OUTPUT"
 
-      - name: Build release binary
+      - name: Build DMG assets
         shell: bash
         run: |
           set -euo pipefail
-          swift build -c release
-
-      - name: Package artifacts
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p dist
-          cp ".build/release/${APP_NAME}" "dist/${APP_NAME}"
-          ditto -c -k --sequesterRsrc --keepParent "dist/${APP_NAME}" "dist/${{ steps.meta.outputs.archive }}"
-          shasum -a 256 "dist/${{ steps.meta.outputs.archive }}" > "dist/${{ steps.meta.outputs.checksum }}"
+          chmod +x ./scripts/build-release-assets.sh
+          ./scripts/build-release-assets.sh "${{ steps.meta.outputs.tag }}" ./dist
 
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v7
         with:
           name: release-assets-${{ steps.meta.outputs.tag }}
           path: |
-            dist/${{ steps.meta.outputs.archive }}
+            dist/${{ steps.meta.outputs.dmg }}
             dist/${{ steps.meta.outputs.checksum }}
 
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.meta.outputs.tag }}
-          ARCHIVE: ${{ steps.meta.outputs.archive }}
+          DMG: ${{ steps.meta.outputs.dmg }}
           CHECKSUM: ${{ steps.meta.outputs.checksum }}
         shell: bash
         run: |
@@ -80,12 +70,12 @@ jobs:
 
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" \
-              "dist/${ARCHIVE}" \
+              "dist/${DMG}" \
               "dist/${CHECKSUM}" \
               --clobber
           else
             gh release create "$TAG" \
-              "dist/${ARCHIVE}" \
+              "dist/${DMG}" \
               "dist/${CHECKSUM}" \
               --generate-notes \
               --title "$TAG"
