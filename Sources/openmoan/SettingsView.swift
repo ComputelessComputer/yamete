@@ -61,6 +61,14 @@ struct SettingsView: View {
                 }
             }
 
+            Section("Claude Code") {
+                Toggle("Whip Claude Code on impact", isOn: $model.claudeWhipEnabled)
+                Text("Sends Ctrl+C and an encouraging message to Claude Code when you slap your laptop. If Claude Code isn't running, opens Ghostty and launches it.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             Section("Menu Bar") {
                 Toggle("Show slap count in menu bar title", isOn: $model.showCountInMenuBar)
             }

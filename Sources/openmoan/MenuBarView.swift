@@ -47,6 +47,15 @@ struct MenuBarView: View {
                     }
                     .buttonStyle(.borderedProminent)
                 }
+
+                Toggle(isOn: Binding(
+                    get: { model.claudeWhipEnabled },
+                    set: { model.claudeWhipEnabled = $0 }
+                )) {
+                    Label("Whip Claude", systemImage: "bolt.fill")
+                }
+                .toggleStyle(.switch)
+                .controlSize(.small)
             }
 
             Divider()

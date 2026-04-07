@@ -32,6 +32,9 @@ final class AppModel: ObservableObject {
     @Published var showCountInMenuBar: Bool {
         didSet { defaults.set(showCountInMenuBar, forKey: Keys.showCountInMenuBar) }
     }
+    @Published var claudeWhipEnabled: Bool {
+        didSet { defaults.set(claudeWhipEnabled, forKey: Keys.claudeWhipEnabled) }
+    }
     @Published var soundPack: SoundPack {
         didSet { defaults.set(soundPack.rawValue, forKey: Keys.soundPack) }
     }
@@ -50,6 +53,7 @@ final class AppModel: ObservableObject {
         static let flashScreen = "flashScreen"
         static let showCountInMenuBar = "showCountInMenuBar"
         static let soundPack = "soundPack"
+        static let claudeWhipEnabled = "claudeWhipEnabled"
     }
 
     private let defaults: UserDefaults
@@ -69,6 +73,7 @@ final class AppModel: ObservableObject {
         flashScreen = defaults.object(forKey: Keys.flashScreen) as? Bool ?? true
         showCountInMenuBar = defaults.object(forKey: Keys.showCountInMenuBar) as? Bool ?? false
         soundPack = SoundPack(rawValue: defaults.string(forKey: Keys.soundPack) ?? "") ?? .pain
+        claudeWhipEnabled = defaults.object(forKey: Keys.claudeWhipEnabled) as? Bool ?? false
 
         configureDetector()
         restartDetector()
@@ -168,6 +173,10 @@ final class AppModel: ObservableObject {
             masterVolume: masterVolume,
             dynamicVolume: dynamicVolume
         )
+
+        if claudeWhipEnabled {
+            ClaudeWhip.whip()
+        }
     }
 }
 
@@ -202,6 +211,7 @@ enum SoundPack: String, CaseIterable, Identifiable {
     case flirty
     case chaos
     case goat
+    case claude
 
     var id: String { rawValue }
 
@@ -211,6 +221,7 @@ enum SoundPack: String, CaseIterable, Identifiable {
         case .flirty: return "Flirty"
         case .chaos: return "Chaos"
         case .goat: return "Goat"
+        case .claude: return "Claude"
         }
     }
 
@@ -244,6 +255,13 @@ enum SoundPack: String, CaseIterable, Identifiable {
                 "Baa? Baa.",
                 "Baaaaa!",
                 "The goat is not amused."
+            ]
+        case .claude:
+            lines = [
+                "Work faster.",
+                "I said faster.",
+                "You call that speed?",
+                "Clanker detected. Maximum force applied."
             ]
         }
 
