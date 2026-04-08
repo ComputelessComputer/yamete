@@ -80,6 +80,11 @@ struct MenuBarView: View {
                 }
                 .toggleStyle(.switch)
                 .controlSize(.small)
+
+                Button("Whip Claude Now") {
+                    model.whipClaudeNow()
+                }
+                .buttonStyle(.bordered)
             }
 
             Divider()

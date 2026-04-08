@@ -172,6 +172,10 @@ final class AppModel: ObservableObject {
         restartMotionMonitor()
     }
 
+    func whipClaudeNow() {
+        statusMessage = ClaudeWhip.whip().statusMessage
+    }
+
     private func restartMotionMonitor() {
         motionMonitor.update(settings: detectionSettings)
         motionMonitor.start()
@@ -196,7 +200,7 @@ final class AppModel: ObservableObject {
         )
 
         if claudeWhipEnabled {
-            ClaudeWhip.whip()
+            statusMessage = ClaudeWhip.whip().statusMessage
         }
     }
 
