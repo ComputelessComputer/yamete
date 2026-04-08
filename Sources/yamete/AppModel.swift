@@ -3,21 +3,27 @@ import SwiftUI
 
 @MainActor
 final class AppModel: ObservableObject {
-    @Published var isListening = false
-    @Published var statusMessage = "Starting detector..."
+    @Published private(set) var isListening = false
+    @Published var statusMessage = "Checking Apple SPU sensor..."
     @Published var slapCount: Int {
         didSet { defaults.set(slapCount, forKey: Keys.slapCount) }
     }
-    @Published var minAmplitude: Double {
+    @Published var impactThreshold: Double {
         didSet {
-            defaults.set(minAmplitude, forKey: Keys.minAmplitude)
-            restartDetector()
+            defaults.set(impactThreshold, forKey: Keys.impactThreshold)
+            motionMonitor.update(settings: detectionSettings)
         }
     }
     @Published var cooldownMs: Double {
         didSet {
             defaults.set(Int(cooldownMs.rounded()), forKey: Keys.cooldownMs)
-            restartDetector()
+            motionMonitor.update(settings: detectionSettings)
+        }
+    }
+    @Published var sampleRateHz: Double {
+        didSet {
+            defaults.set(Int(sampleRateHz.rounded()), forKey: Keys.sampleRateHz)
+            restartMotionMonitor()
         }
     }
     @Published var masterVolume: Double {
@@ -38,16 +44,20 @@ final class AppModel: ObservableObject {
     @Published var soundPack: SoundPack {
         didSet { defaults.set(soundPack.rawValue, forKey: Keys.soundPack) }
     }
-    @Published private(set) var backendLabel = "Demo Preview"
-    @Published private(set) var backendMessage = "Checking detector..."
-    @Published private(set) var supportsLiveImpacts = false
-    @Published var lastAmplitude: Double = 0
-    @Published var lastSeverity = "idle"
+    @Published private(set) var backendState: MotionBackendState = .stopped("Checking Apple SPU sensor...")
+    @Published private(set) var liveAcceleration = Vector3.zero
+    @Published private(set) var liveGyroscope = Vector3.zero
+    @Published private(set) var dynamicAcceleration = Vector3.zero
+    @Published private(set) var liveOrientation: OrientationEstimate?
+    @Published private(set) var measuredSampleRate = 0.0
+    @Published private(set) var lastImpactMagnitude = 0.0
+    @Published private(set) var lastSeverity = "IDLE"
 
     private enum Keys {
         static let slapCount = "slapCount"
-        static let minAmplitude = "minAmplitude"
+        static let impactThreshold = "impactThreshold"
         static let cooldownMs = "cooldownMs"
+        static let sampleRateHz = "sampleRateHz"
         static let masterVolume = "masterVolume"
         static let dynamicVolume = "dynamicVolume"
         static let flashScreen = "flashScreen"
@@ -59,15 +69,19 @@ final class AppModel: ObservableObject {
     private let defaults: UserDefaults
     private let audioEngine = SpeechAudioEngine()
     private let flashController = FlashOverlayController()
-    private var detector: ImpactDetector?
+    private let motionMonitor: MotionMonitor
     private var comboState = ComboState()
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        let initialImpactThreshold = defaults.object(forKey: Keys.impactThreshold) as? Double ?? 0.18
+        let initialCooldownMs = Double(defaults.object(forKey: Keys.cooldownMs) as? Int ?? 750)
+        let initialSampleRate = Double(defaults.object(forKey: Keys.sampleRateHz) as? Int ?? 100)
 
         slapCount = defaults.object(forKey: Keys.slapCount) as? Int ?? 0
-        minAmplitude = defaults.object(forKey: Keys.minAmplitude) as? Double ?? 0.05
-        cooldownMs = Double(defaults.object(forKey: Keys.cooldownMs) as? Int ?? 750)
+        impactThreshold = initialImpactThreshold
+        cooldownMs = initialCooldownMs
+        sampleRateHz = initialSampleRate
         masterVolume = defaults.object(forKey: Keys.masterVolume) as? Double ?? 0.9
         dynamicVolume = defaults.object(forKey: Keys.dynamicVolume) as? Bool ?? true
         flashScreen = defaults.object(forKey: Keys.flashScreen) as? Bool ?? true
@@ -75,33 +89,78 @@ final class AppModel: ObservableObject {
         soundPack = SoundPack(rawValue: defaults.string(forKey: Keys.soundPack) ?? "") ?? .pain
         claudeWhipEnabled = defaults.object(forKey: Keys.claudeWhipEnabled) as? Bool ?? false
 
-        configureDetector()
-        restartDetector()
+        motionMonitor = MotionMonitor(settings: DetectionSettings(
+            impactThreshold: initialImpactThreshold,
+            cooldown: initialCooldownMs / 1000,
+            sampleRate: Int(initialSampleRate.rounded())
+        ))
+
+        motionMonitor.onStateChange = { [weak self] state in
+            Task { @MainActor in
+                self?.applyBackendState(state)
+            }
+        }
+        motionMonitor.onSnapshot = { [weak self] snapshot in
+            Task { @MainActor in
+                self?.applySnapshot(snapshot)
+            }
+        }
+        motionMonitor.onImpact = { [weak self] event in
+            Task { @MainActor in
+                self?.handleImpact(event)
+            }
+        }
+
+        restartMotionMonitor()
     }
 
     var menuBarTitle: String {
         showCountInMenuBar ? "Yamete \(slapCount)" : "Yamete"
     }
 
-    var detectorSettings: DetectorSettings {
-        DetectorSettings(
-            minAmplitude: minAmplitude,
-            cooldownMs: Int(cooldownMs.rounded())
+    var backendLabel: String {
+        backendState.label
+    }
+
+    var backendMessage: String {
+        backendState.description
+    }
+
+    var supportsLiveImpacts: Bool {
+        backendState.supportsLiveCapture
+    }
+
+    var canRetrySensor: Bool {
+        switch backendState {
+        case .needsRoot, .failed:
+            return true
+        case .running, .stopped, .unavailable:
+            return false
+        }
+    }
+
+    var detectionSettings: DetectionSettings {
+        DetectionSettings(
+            impactThreshold: impactThreshold,
+            cooldown: cooldownMs / 1000,
+            sampleRate: Int(sampleRateHz.rounded())
         )
     }
 
     func toggleListening() {
-        isListening ? stopListening() : restartDetector()
+        isListening ? stopListening() : restartMotionMonitor()
     }
 
     func stopListening() {
-        detector?.stop()
-        isListening = false
-        statusMessage = "Detector stopped"
+        motionMonitor.stop()
     }
 
     func triggerTestSlap() {
-        handleImpact(.init(timestamp: Date(), amplitude: max(minAmplitude + 0.15, 0.2), severity: "TEST"))
+        liveAcceleration = Vector3(x: 0.05, y: -0.08, z: -0.96)
+        dynamicAcceleration = Vector3(x: 0.32, y: 0.18, z: -0.27)
+        lastImpactMagnitude = dynamicAcceleration.magnitude
+        liveOrientation = OrientationEstimate(roll: -5.0, pitch: 2.3, yaw: 0.0)
+        handleImpact(.init(timestamp: Date(), amplitude: max(impactThreshold + 0.15, 0.3), severity: "TEST"))
     }
 
     func resetCount() {
@@ -109,58 +168,20 @@ final class AppModel: ObservableObject {
         comboState = ComboState()
     }
 
-    private func configureDetector() {
-        if let binary = SpankBridgeDetector.locateBinary() {
-            let bridge = SpankBridgeDetector(binaryURL: binary)
-            bridge.onEvent = { [weak self] event in
-                Task { @MainActor in
-                    self?.handleImpact(event)
-                }
-            }
-            bridge.onStatus = { [weak self] message in
-                Task { @MainActor in
-                    self?.statusMessage = message
-                }
-            }
-            detector = bridge
-            backendLabel = "spank"
-            if SpankBridgeDetector.isBundledBinary(binary) {
-                backendMessage = "Using the bundled spank detector for real laptop hits."
-            } else {
-                backendMessage = "Using the installed spank detector for real laptop hits."
-            }
-            supportsLiveImpacts = true
-            return
-        }
-
-        let demo = DemoDetector()
-        demo.onEvent = { [weak self] event in
-            Task { @MainActor in
-                self?.handleImpact(event)
-            }
-        }
-        demo.onStatus = { [weak self] message in
-            Task { @MainActor in
-                self?.statusMessage = message
-            }
-        }
-        detector = demo
-        backendLabel = "Demo Preview"
-        backendMessage = "Install spank to react to real laptop hits. Until then, only Preview Test Slap works."
-        supportsLiveImpacts = false
+    func retrySensor() {
+        restartMotionMonitor()
     }
 
-    private func restartDetector() {
-        detector?.stop()
-        detector?.start(settings: detectorSettings)
-        isListening = true
+    private func restartMotionMonitor() {
+        motionMonitor.update(settings: detectionSettings)
+        motionMonitor.start()
     }
 
     private func handleImpact(_ event: ImpactEvent) {
         slapCount += 1
-        lastAmplitude = event.amplitude
+        lastImpactMagnitude = event.amplitude
         lastSeverity = event.severity
-        statusMessage = "\(event.severity) at \(String(format: "%.3f", event.amplitude))g"
+        statusMessage = "\(event.severity) impact at \(String(format: "%.3f", event.amplitude))g"
 
         let tier = comboState.record(event.timestamp)
         if flashScreen {
@@ -177,6 +198,28 @@ final class AppModel: ObservableObject {
         if claudeWhipEnabled {
             ClaudeWhip.whip()
         }
+    }
+
+    private func applyBackendState(_ state: MotionBackendState) {
+        backendState = state
+        isListening = state.isRunning
+
+        switch state {
+        case .running:
+            if slapCount == 0 {
+                statusMessage = state.description
+            }
+        case .stopped, .needsRoot, .unavailable, .failed:
+            statusMessage = state.description
+        }
+    }
+
+    private func applySnapshot(_ snapshot: MotionSnapshot) {
+        liveAcceleration = snapshot.accel
+        liveGyroscope = snapshot.gyro
+        dynamicAcceleration = snapshot.dynamic
+        liveOrientation = snapshot.orientation
+        measuredSampleRate = snapshot.sampleRate
     }
 }
 

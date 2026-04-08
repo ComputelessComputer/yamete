@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct MenuBarView: View {
@@ -18,15 +19,31 @@ struct MenuBarView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            if !model.supportsLiveImpacts {
+            if case .needsRoot = model.backendState {
+                backendNotice(title: "Root required", message: model.backendMessage, tint: .orange)
+            } else if case .unavailable = model.backendState {
+                backendNotice(title: "Live sensor unavailable", message: model.backendMessage, tint: .orange)
+            } else if case .failed = model.backendState {
+                backendNotice(title: "Sensor startup failed", message: model.backendMessage, tint: .red)
+            } else if !model.supportsLiveImpacts {
                 backendNotice(message: model.backendMessage)
             }
 
             HStack(spacing: 12) {
-                statCard(label: "Slaps", value: "\(model.slapCount)")
-                statCard(label: "Amp", value: String(format: "%.3fg", model.lastAmplitude))
-                statCard(label: "State", value: model.lastSeverity)
+                statCard(label: "Impacts", value: "\(model.slapCount)")
+                statCard(label: "Dynamic", value: String(format: "%.3fg", model.lastImpactMagnitude))
+                statCard(label: "Rate", value: "\(Int(model.measuredSampleRate.rounded())) Hz")
             }
+
+            VStack(alignment: .leading, spacing: 10) {
+                metricRow(label: "Accel", value: triplet(model.liveAcceleration))
+                metricRow(label: "Gyro", value: triplet(model.liveGyroscope))
+                metricRow(label: "Dynamic", value: triplet(model.dynamicAcceleration))
+                metricRow(label: "State", value: model.lastSeverity)
+                metricRow(label: "Euler", value: orientation(model.liveOrientation))
+            }
+            .padding(12)
+            .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 12))
 
             VStack(spacing: 8) {
                 if model.supportsLiveImpacts {
@@ -36,13 +53,20 @@ struct MenuBarView: View {
                     .buttonStyle(.borderedProminent)
                 }
 
+                if model.canRetrySensor {
+                    Button("Retry Sensor") {
+                        model.retrySensor()
+                    }
+                    .buttonStyle(.bordered)
+                }
+
                 if model.supportsLiveImpacts {
-                    Button("Test Slap") {
+                    Button("Preview Test Slap") {
                         model.triggerTestSlap()
                     }
                     .buttonStyle(.bordered)
                 } else {
-                    Button("Preview Test Slap") {
+                    Button("Test Yamete") {
                         model.triggerTestSlap()
                     }
                     .buttonStyle(.borderedProminent)
@@ -73,7 +97,7 @@ struct MenuBarView: View {
             }
         }
         .padding(16)
-        .frame(width: 320)
+        .frame(width: 340)
     }
 
     private func statCard(label: String, value: String) -> some View {
@@ -91,11 +115,28 @@ struct MenuBarView: View {
         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 12))
     }
 
+    private func metricRow(label: String, value: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(value)
+                .font(.system(.footnote, design: .monospaced))
+                .multilineTextAlignment(.trailing)
+                .foregroundStyle(.primary)
+        }
+    }
+
     private func backendNotice(message: String) -> some View {
+        backendNotice(title: "Live motion capture is off", message: message, tint: .orange)
+    }
+
+    private func backendNotice(title: String, message: String, tint: Color) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Label("Real slap detection is off", systemImage: "exclamationmark.triangle.fill")
+            Label(title, systemImage: "exclamationmark.triangle.fill")
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.orange)
+                .foregroundStyle(tint)
             Text(message)
                 .font(.footnote)
                 .foregroundStyle(.secondary)
@@ -103,6 +144,18 @@ struct MenuBarView: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+        .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func triplet(_ vector: Vector3) -> String {
+        String(format: "%.3f  %.3f  %.3f", vector.x, vector.y, vector.z)
+    }
+
+    private func orientation(_ estimate: OrientationEstimate?) -> String {
+        guard let estimate else {
+            return "Calibrating"
+        }
+
+        return String(format: "%.1f°  %.1f°  %.1f°", estimate.roll, estimate.pitch, estimate.yaw)
     }
 }
