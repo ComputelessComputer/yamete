@@ -7,7 +7,7 @@ struct MenuBarView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("OpenMoan")
+                Text("Yamete")
                     .font(.headline)
                 Text("Backend: \(model.backendLabel)")
                     .font(.subheadline)

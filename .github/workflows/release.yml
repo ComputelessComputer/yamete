@@ -17,8 +17,8 @@ jobs:
   release:
     runs-on: macos-latest
     env:
-      APP_NAME: OpenMoan
-      APP_BUNDLE: OpenMoan.app
+      APP_NAME: Yamete
+      APP_BUNDLE: Yamete.app
     steps:
       - name: Checkout
         uses: actions/checkout@v6

@@ -4,19 +4,19 @@
 import PackageDescription
 
 let package = Package(
-    name: "openmoan",
+    name: "yamete",
     platforms: [
         .macOS(.v14),
     ],
     products: [
         .executable(
-            name: "openmoan",
-            targets: ["openmoan"]
+            name: "yamete",
+            targets: ["yamete"]
         ),
     ],
     targets: [
         .executableTarget(
-            name: "openmoan"
+            name: "yamete"
         ),
     ]
 )

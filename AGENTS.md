@@ -4,7 +4,7 @@ alwaysApply: true
 
 ## Definition
 
-- The app's name is OpenMoan.
+- The app's name is Yamete.
 - This is a native macOS SwiftUI app.
 
 ## Commit Discipline

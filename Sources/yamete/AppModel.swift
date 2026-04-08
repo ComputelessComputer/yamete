@@ -80,7 +80,7 @@ final class AppModel: ObservableObject {
     }
 
     var menuBarTitle: String {
-        showCountInMenuBar ? "OpenMoan \(slapCount)" : "OpenMoan"
+        showCountInMenuBar ? "Yamete \(slapCount)" : "Yamete"
     }
 
     var detectorSettings: DetectorSettings {
