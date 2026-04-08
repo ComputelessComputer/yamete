@@ -106,23 +106,12 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x ./scripts/build-release-assets.sh
-          chmod +x ./scripts/fetch-spank.sh
           ./scripts/build-release-assets.sh "${{ steps.meta.outputs.tag }}" ./dist
 
       - name: Sign app bundle
         shell: bash
         run: |
           set -euo pipefail
-
-          SPANK_BIN="${{ steps.meta.outputs.app_path }}/Contents/Resources/spank"
-          if [[ -x "$SPANK_BIN" ]]; then
-            echo "Signing bundled spank binary..."
-            /usr/bin/codesign --force --sign "$SIGNING_IDENTITY" \
-              --options runtime \
-              --timestamp \
-              --verbose \
-              "$SPANK_BIN"
-          fi
 
           /usr/bin/codesign --force --sign "$SIGNING_IDENTITY" \
             --options runtime \
