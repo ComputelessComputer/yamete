@@ -1,9 +1,11 @@
+import AppKit
 import Foundation
 import SwiftUI
 
 @MainActor
 final class AppModel: ObservableObject {
     @Published private(set) var isListening = false
+    @Published private(set) var isCheckingForUpdates = false
     @Published var statusMessage = "Checking Apple SPU sensor..."
     @Published private(set) var macSmackCount: Int {
         didSet { defaults.set(macSmackCount, forKey: Keys.macSmackCount) }
@@ -114,6 +116,23 @@ final class AppModel: ObservableObject {
         applyClaudeWhipResult(ClaudeWhip.whip())
     }
 
+    func checkForUpdates() {
+        guard !isCheckingForUpdates else { return }
+
+        isCheckingForUpdates = true
+        statusMessage = "Checking for updates..."
+
+        let currentVersion = AppVersion.current
+
+        Task {
+            let result = await UpdateChecker.check(currentVersion: currentVersion)
+            await MainActor.run {
+                isCheckingForUpdates = false
+                applyUpdateCheckResult(result)
+            }
+        }
+    }
+
     private func restartMotionMonitor() {
         motionMonitor.update(settings: Self.defaultDetectionSettings)
         motionMonitor.start()
@@ -166,6 +185,18 @@ final class AppModel: ObservableObject {
             claudeWhipCount += 1
         case .failed:
             break
+        }
+    }
+
+    private func applyUpdateCheckResult(_ result: UpdateCheckResult) {
+        switch result {
+        case .upToDate(let version):
+            statusMessage = "Yamete \(version) is up to date."
+        case .updateAvailable(let update):
+            statusMessage = "Update available: \(update.version)"
+            NSWorkspace.shared.open(update.releaseURL)
+        case .failed(let message):
+            statusMessage = message
         }
     }
 }

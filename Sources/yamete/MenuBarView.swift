@@ -45,6 +45,11 @@ struct MenuBarView: View {
             }
 
             Section {
+                Button(model.isCheckingForUpdates ? "Checking for Updates..." : "Check for Updates") {
+                    model.checkForUpdates()
+                }
+                .disabled(model.isCheckingForUpdates)
+
                 Button("Reset Counts") {
                     model.resetCounts()
                 }
