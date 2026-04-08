@@ -5,21 +5,15 @@ import Foundation
 
 @MainActor
 final class SpeechAudioEngine: NSObject, AVAudioPlayerDelegate {
-    private let synthesizer = AVSpeechSynthesizer()
     private var routedPlayer: AVAudioPlayer?
-    private var renderSynthesizer: AVSpeechSynthesizer?
-    private var activeRenderURL: URL?
-    private var playbackToken = UUID()
+    private let soundLibrary = SoundLibrary()
 
-    func play(response: String, amplitude: Double, masterVolume: Double, dynamicVolume: Bool) {
+    func play(amplitude: Double, masterVolume: Double, dynamicVolume: Bool) {
         let volume = dynamicVolume ? scaledVolume(for: amplitude, masterVolume: masterVolume) : masterVolume
         stopCurrentPlayback()
 
-        if let deviceUID = PreferredAudioOutputSelector.preferredPersonalAudioDeviceUID() {
-            playRenderedSpeech(response: response, volume: Float(volume), deviceUID: deviceUID)
-        } else {
-            speakDirectly(response: response, volume: Float(volume))
-        }
+        guard let soundURL = soundLibrary.randomSoundURL() else { return }
+        playSound(from: soundURL, volume: Float(volume), deviceUID: PreferredAudioOutputSelector.preferredPersonalAudioDeviceUID())
     }
 
     private func scaledVolume(for amplitude: Double, masterVolume: Double) -> Double {
@@ -31,83 +25,9 @@ final class SpeechAudioEngine: NSObject, AVAudioPlayerDelegate {
         return min(max(masterVolume * (0.35 + curved * 0.65), 0), 1)
     }
 
-    private func speakDirectly(response: String, volume: Float) {
-        let utterance = AVSpeechUtterance(string: response)
-        utterance.rate = 0.46
-        utterance.volume = volume
-        synthesizer.speak(utterance)
-    }
-
-    private func playRenderedSpeech(response: String, volume: Float, deviceUID: String) {
-        let token = UUID()
-        playbackToken = token
-
-        let renderURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("yamete-\(token.uuidString)")
-            .appendingPathExtension("caf")
-        activeRenderURL = renderURL
-
-        let renderSink = SpeechRenderSink(fileURL: renderURL)
-        let renderSynthesizer = AVSpeechSynthesizer()
-        self.renderSynthesizer = renderSynthesizer
-
-        let utterance = AVSpeechUtterance(string: response)
-        utterance.rate = 0.46
-        utterance.volume = 1.0
-
-        renderSynthesizer.write(utterance) { [weak self] buffer in
-            guard let self else { return }
-
-            if let pcmBuffer = buffer as? AVAudioPCMBuffer, pcmBuffer.frameLength > 0 {
-                do {
-                    try renderSink.append(pcmBuffer)
-                } catch {
-                    DispatchQueue.main.async {
-                        self.finishRenderedSpeech(
-                            token: token,
-                            response: response,
-                            volume: volume,
-                            deviceUID: nil,
-                            renderURL: nil
-                        )
-                    }
-                }
-                return
-            }
-
-            DispatchQueue.main.async {
-                self.finishRenderedSpeech(
-                    token: token,
-                    response: response,
-                    volume: volume,
-                    deviceUID: deviceUID,
-                    renderURL: renderSink.hasWrittenFrames ? renderURL : nil
-                )
-            }
-        }
-    }
-
-    private func finishRenderedSpeech(
-        token: UUID,
-        response: String,
-        volume: Float,
-        deviceUID: String?,
-        renderURL: URL?
-    ) {
-        guard playbackToken == token else {
-            cleanupRenderFile(renderURL)
-            return
-        }
-
-        renderSynthesizer = nil
-
-        guard let renderURL else {
-            speakDirectly(response: response, volume: volume)
-            return
-        }
-
+    private func playSound(from url: URL, volume: Float, deviceUID: String?) {
         do {
-            let player = try AVAudioPlayer(contentsOf: renderURL)
+            let player = try AVAudioPlayer(contentsOf: url)
             player.delegate = self
             player.volume = volume
             player.currentDevice = deviceUID
@@ -118,29 +38,13 @@ final class SpeechAudioEngine: NSObject, AVAudioPlayerDelegate {
                 return
             }
         } catch {
-            // Fall back to the current system output device if app-local routing fails.
+            return
         }
-
-        cleanupRenderFile(renderURL)
-        speakDirectly(response: response, volume: volume)
     }
 
     private func stopCurrentPlayback() {
-        synthesizer.stopSpeaking(at: .immediate)
-        renderSynthesizer?.stopSpeaking(at: .immediate)
-        renderSynthesizer = nil
         routedPlayer?.stop()
         routedPlayer = nil
-        cleanupRenderFile(activeRenderURL)
-        activeRenderURL = nil
-    }
-
-    private func cleanupRenderFile(_ url: URL?) {
-        guard let url else { return }
-        try? FileManager.default.removeItem(at: url)
-        if activeRenderURL == url {
-            activeRenderURL = nil
-        }
     }
 
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
@@ -149,7 +53,6 @@ final class SpeechAudioEngine: NSObject, AVAudioPlayerDelegate {
             guard let self else { return }
             if self.routedPlayer?.url == finishedURL {
                 self.routedPlayer = nil
-                self.cleanupRenderFile(self.activeRenderURL)
             }
         }
     }
@@ -190,35 +93,6 @@ final class FlashOverlayController {
         }
         hideWorkItem = item
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: item)
-    }
-}
-
-private final class SpeechRenderSink: @unchecked Sendable {
-    private let fileURL: URL
-    private let lock = NSLock()
-    private var audioFile: AVAudioFile?
-    private var wroteFrames = false
-
-    init(fileURL: URL) {
-        self.fileURL = fileURL
-    }
-
-    func append(_ buffer: AVAudioPCMBuffer) throws {
-        lock.lock()
-        defer { lock.unlock() }
-
-        if audioFile == nil {
-            audioFile = try AVAudioFile(forWriting: fileURL, settings: buffer.format.settings)
-        }
-
-        try audioFile?.write(from: buffer)
-        wroteFrames = true
-    }
-
-    var hasWrittenFrames: Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return wroteFrames
     }
 }
 
@@ -397,6 +271,29 @@ private struct PreferredAudioOutputSelector {
         }
 
         return value.takeRetainedValue() as String
+    }
+}
+
+private struct SoundLibrary {
+    private let soundURLs: [URL]
+
+    init(bundle: Bundle = .module) {
+        let candidates = [
+            "yamete-kudasai",
+            "haang",
+            "anime-moan",
+            "dame-dame",
+        ]
+
+        self.soundURLs = candidates.compactMap { name in
+            bundle.url(forResource: name, withExtension: "mp3", subdirectory: "Audio")
+                ?? Bundle.main.url(forResource: name, withExtension: "mp3")
+                ?? Bundle.main.url(forResource: name, withExtension: "mp3", subdirectory: "Audio")
+        }
+    }
+
+    func randomSoundURL() -> URL? {
+        soundURLs.randomElement()
     }
 }
 

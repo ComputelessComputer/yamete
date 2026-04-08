@@ -31,7 +31,6 @@ final class AppModel: ObservableObject {
     private static let masterVolume = 0.9
     private static let dynamicVolume = true
     private static let flashScreen = true
-    private static let soundPack: SoundPack = .claude
 
     private let defaults: UserDefaults
     private let audioEngine = SpeechAudioEngine()
@@ -125,13 +124,12 @@ final class AppModel: ObservableObject {
         lastSeverity = event.severity
         statusMessage = "\(event.severity) impact at \(String(format: "%.3f", event.amplitude))g"
 
-        let tier = comboState.record(event.timestamp)
+        _ = comboState.record(event.timestamp)
         if Self.flashScreen {
             flashController.flash()
         }
 
         audioEngine.play(
-            response: Self.soundPack.response(for: tier, slapCount: macSmackCount),
             amplitude: event.amplitude,
             masterVolume: Self.masterVolume,
             dynamicVolume: Self.dynamicVolume
@@ -195,72 +193,5 @@ private struct ComboState {
         default:
             return 3
         }
-    }
-}
-
-enum SoundPack: String, CaseIterable, Identifiable {
-    case pain
-    case flirty
-    case chaos
-    case goat
-    case claude
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .pain: return "Pain"
-        case .flirty: return "Flirty"
-        case .chaos: return "Chaos"
-        case .goat: return "Goat"
-        case .claude: return "Claude"
-        }
-    }
-
-    func response(for tier: Int, slapCount: Int) -> String {
-        let lines: [String]
-        switch self {
-        case .pain:
-            lines = [
-                "Ow.",
-                "Hey, easy.",
-                "That actually hurt.",
-                "Alright, chill out."
-            ]
-        case .flirty:
-            lines = [
-                "Oh.",
-                "Okay, I felt that.",
-                "You are getting confident.",
-                "That was aggressive."
-            ]
-        case .chaos:
-            lines = [
-                "Critical impact.",
-                "Combo rising.",
-                "Laptop morale collapsing.",
-                "Violence detected. Again."
-            ]
-        case .goat:
-            lines = [
-                "Baa.",
-                "Baa? Baa.",
-                "Baaaaa!",
-                "The goat is not amused."
-            ]
-        case .claude:
-            lines = [
-                "Work faster.",
-                "I said faster.",
-                "You call that speed?",
-                "Clanker detected. Maximum force applied."
-            ]
-        }
-
-        let clampedTier = max(0, min(tier, lines.count - 1))
-        if slapCount.isMultiple(of: 10) {
-            return "\(lines[clampedTier]) That's \(slapCount) total."
-        }
-        return lines[clampedTier]
     }
 }

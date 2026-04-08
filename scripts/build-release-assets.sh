@@ -27,6 +27,8 @@ cp "$PRODUCT_DIR/$EXECUTABLE_NAME" "$APP_PATH/Contents/MacOS/$EXECUTABLE_NAME"
 chmod +x "$APP_PATH/Contents/MacOS/$EXECUTABLE_NAME"
 printf 'APPL????' > "$APP_PATH/Contents/PkgInfo"
 
+find "$PRODUCT_DIR" -maxdepth 1 -name '*.bundle' -exec cp -R {} "$APP_PATH/Contents/Resources/" \;
+
 cat > "$APP_PATH/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
