@@ -14,7 +14,6 @@ PRODUCT_DIR="$ROOT_DIR/.build/apple/Products/Release"
 APP_PATH="$OUTPUT_DIR/$APP_NAME.app"
 DMG_PATH="$OUTPUT_DIR/${APP_NAME}-${TAG}-macos.dmg"
 CHECKSUM_PATH="${DMG_PATH}.sha256"
-SPANK_SOURCE="${SPANK_BINARY:-}"
 
 mkdir -p "$OUTPUT_DIR"
 
@@ -27,28 +26,6 @@ mkdir -p "$APP_PATH/Contents/MacOS" "$APP_PATH/Contents/Resources"
 cp "$PRODUCT_DIR/$EXECUTABLE_NAME" "$APP_PATH/Contents/MacOS/$EXECUTABLE_NAME"
 chmod +x "$APP_PATH/Contents/MacOS/$EXECUTABLE_NAME"
 printf 'APPL????' > "$APP_PATH/Contents/PkgInfo"
-
-if [[ -z "$SPANK_SOURCE" ]] && command -v spank >/dev/null 2>&1; then
-  SPANK_SOURCE="$(command -v spank)"
-fi
-
-if [[ -z "$SPANK_SOURCE" ]]; then
-  echo "spank not found locally, fetching from GitHub..."
-  SPANK_SOURCE="$("$ROOT_DIR/scripts/fetch-spank.sh" "$ROOT_DIR/.build/spank")"
-fi
-
-if [[ -n "$SPANK_SOURCE" ]]; then
-  if [[ ! -x "$SPANK_SOURCE" ]]; then
-    echo "Configured spank binary is not executable: $SPANK_SOURCE" >&2
-    exit 1
-  fi
-
-  cp "$SPANK_SOURCE" "$APP_PATH/Contents/Resources/spank"
-  chmod +x "$APP_PATH/Contents/Resources/spank"
-  echo "Bundled spank binary from $SPANK_SOURCE"
-else
-  echo "Warning: spank not found. Set SPANK_BINARY=/path/to/spank to bundle live slap detection." >&2
-fi
 
 cat > "$APP_PATH/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
