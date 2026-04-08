@@ -104,6 +104,7 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x ./scripts/build-release-assets.sh
+          chmod +x ./scripts/fetch-spank.sh
           ./scripts/build-release-assets.sh "${{ steps.meta.outputs.tag }}" ./dist
 
       - name: Sign app bundle
