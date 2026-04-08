@@ -5,66 +5,33 @@ import SwiftUI
 final class AppModel: ObservableObject {
     @Published private(set) var isListening = false
     @Published var statusMessage = "Checking Apple SPU sensor..."
-    @Published var slapCount: Int {
-        didSet { defaults.set(slapCount, forKey: Keys.slapCount) }
+    @Published private(set) var macSmackCount: Int {
+        didSet { defaults.set(macSmackCount, forKey: Keys.macSmackCount) }
     }
-    @Published var impactThreshold: Double {
-        didSet {
-            defaults.set(impactThreshold, forKey: Keys.impactThreshold)
-            motionMonitor.update(settings: detectionSettings)
-        }
-    }
-    @Published var cooldownMs: Double {
-        didSet {
-            defaults.set(Int(cooldownMs.rounded()), forKey: Keys.cooldownMs)
-            motionMonitor.update(settings: detectionSettings)
-        }
-    }
-    @Published var sampleRateHz: Double {
-        didSet {
-            defaults.set(Int(sampleRateHz.rounded()), forKey: Keys.sampleRateHz)
-            restartMotionMonitor()
-        }
-    }
-    @Published var masterVolume: Double {
-        didSet { defaults.set(masterVolume, forKey: Keys.masterVolume) }
-    }
-    @Published var dynamicVolume: Bool {
-        didSet { defaults.set(dynamicVolume, forKey: Keys.dynamicVolume) }
-    }
-    @Published var flashScreen: Bool {
-        didSet { defaults.set(flashScreen, forKey: Keys.flashScreen) }
-    }
-    @Published var showCountInMenuBar: Bool {
-        didSet { defaults.set(showCountInMenuBar, forKey: Keys.showCountInMenuBar) }
+    @Published private(set) var claudeWhipCount: Int {
+        didSet { defaults.set(claudeWhipCount, forKey: Keys.claudeWhipCount) }
     }
     @Published var claudeWhipEnabled: Bool {
         didSet { defaults.set(claudeWhipEnabled, forKey: Keys.claudeWhipEnabled) }
     }
-    @Published var soundPack: SoundPack {
-        didSet { defaults.set(soundPack.rawValue, forKey: Keys.soundPack) }
-    }
     @Published private(set) var backendState: MotionBackendState = .stopped("Checking Apple SPU sensor...")
-    @Published private(set) var liveAcceleration = Vector3.zero
-    @Published private(set) var liveGyroscope = Vector3.zero
-    @Published private(set) var dynamicAcceleration = Vector3.zero
-    @Published private(set) var liveOrientation: OrientationEstimate?
-    @Published private(set) var measuredSampleRate = 0.0
-    @Published private(set) var lastImpactMagnitude = 0.0
     @Published private(set) var lastSeverity = "IDLE"
 
     private enum Keys {
-        static let slapCount = "slapCount"
-        static let impactThreshold = "impactThreshold"
-        static let cooldownMs = "cooldownMs"
-        static let sampleRateHz = "sampleRateHz"
-        static let masterVolume = "masterVolume"
-        static let dynamicVolume = "dynamicVolume"
-        static let flashScreen = "flashScreen"
-        static let showCountInMenuBar = "showCountInMenuBar"
-        static let soundPack = "soundPack"
+        static let macSmackCount = "macSmackCount"
+        static let claudeWhipCount = "claudeWhipCount"
         static let claudeWhipEnabled = "claudeWhipEnabled"
     }
+
+    private static let defaultDetectionSettings = DetectionSettings(
+        impactThreshold: 0.18,
+        cooldown: 0.75,
+        sampleRate: 100
+    )
+    private static let masterVolume = 0.9
+    private static let dynamicVolume = true
+    private static let flashScreen = true
+    private static let soundPack: SoundPack = .claude
 
     private let defaults: UserDefaults
     private let audioEngine = SpeechAudioEngine()
@@ -74,26 +41,12 @@ final class AppModel: ObservableObject {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        let initialImpactThreshold = defaults.object(forKey: Keys.impactThreshold) as? Double ?? 0.18
-        let initialCooldownMs = Double(defaults.object(forKey: Keys.cooldownMs) as? Int ?? 750)
-        let initialSampleRate = Double(defaults.object(forKey: Keys.sampleRateHz) as? Int ?? 100)
 
-        slapCount = defaults.object(forKey: Keys.slapCount) as? Int ?? 0
-        impactThreshold = initialImpactThreshold
-        cooldownMs = initialCooldownMs
-        sampleRateHz = initialSampleRate
-        masterVolume = defaults.object(forKey: Keys.masterVolume) as? Double ?? 0.9
-        dynamicVolume = defaults.object(forKey: Keys.dynamicVolume) as? Bool ?? true
-        flashScreen = defaults.object(forKey: Keys.flashScreen) as? Bool ?? true
-        showCountInMenuBar = defaults.object(forKey: Keys.showCountInMenuBar) as? Bool ?? false
-        soundPack = SoundPack(rawValue: defaults.string(forKey: Keys.soundPack) ?? "") ?? .pain
+        macSmackCount = defaults.object(forKey: Keys.macSmackCount) as? Int ?? 0
+        claudeWhipCount = defaults.object(forKey: Keys.claudeWhipCount) as? Int ?? 0
         claudeWhipEnabled = defaults.object(forKey: Keys.claudeWhipEnabled) as? Bool ?? false
 
-        motionMonitor = MotionMonitor(settings: DetectionSettings(
-            impactThreshold: initialImpactThreshold,
-            cooldown: initialCooldownMs / 1000,
-            sampleRate: Int(initialSampleRate.rounded())
-        ))
+        motionMonitor = MotionMonitor(settings: Self.defaultDetectionSettings)
 
         motionMonitor.onStateChange = { [weak self] state in
             Task { @MainActor in
@@ -115,11 +68,7 @@ final class AppModel: ObservableObject {
     }
 
     var menuBarTitle: String {
-        showCountInMenuBar ? "Yamete \(slapCount)" : "Yamete"
-    }
-
-    var backendLabel: String {
-        backendState.label
+        "Yamete"
     }
 
     var backendMessage: String {
@@ -139,14 +88,6 @@ final class AppModel: ObservableObject {
         }
     }
 
-    var detectionSettings: DetectionSettings {
-        DetectionSettings(
-            impactThreshold: impactThreshold,
-            cooldown: cooldownMs / 1000,
-            sampleRate: Int(sampleRateHz.rounded())
-        )
-    }
-
     func toggleListening() {
         isListening ? stopListening() : restartMotionMonitor()
     }
@@ -156,16 +97,14 @@ final class AppModel: ObservableObject {
     }
 
     func triggerTestSlap() {
-        liveAcceleration = Vector3(x: 0.05, y: -0.08, z: -0.96)
-        dynamicAcceleration = Vector3(x: 0.32, y: 0.18, z: -0.27)
-        lastImpactMagnitude = dynamicAcceleration.magnitude
-        liveOrientation = OrientationEstimate(roll: -5.0, pitch: 2.3, yaw: 0.0)
-        handleImpact(.init(timestamp: Date(), amplitude: max(impactThreshold + 0.15, 0.3), severity: "TEST"))
+        handleImpact(.init(timestamp: Date(), amplitude: 0.33, severity: "TEST"))
     }
 
-    func resetCount() {
-        slapCount = 0
+    func resetCounts() {
+        macSmackCount = 0
+        claudeWhipCount = 0
         comboState = ComboState()
+        statusMessage = "Counters reset."
     }
 
     func retrySensor() {
@@ -173,34 +112,33 @@ final class AppModel: ObservableObject {
     }
 
     func whipClaudeNow() {
-        statusMessage = ClaudeWhip.whip().statusMessage
+        applyClaudeWhipResult(ClaudeWhip.whip())
     }
 
     private func restartMotionMonitor() {
-        motionMonitor.update(settings: detectionSettings)
+        motionMonitor.update(settings: Self.defaultDetectionSettings)
         motionMonitor.start()
     }
 
     private func handleImpact(_ event: ImpactEvent) {
-        slapCount += 1
-        lastImpactMagnitude = event.amplitude
+        macSmackCount += 1
         lastSeverity = event.severity
         statusMessage = "\(event.severity) impact at \(String(format: "%.3f", event.amplitude))g"
 
         let tier = comboState.record(event.timestamp)
-        if flashScreen {
+        if Self.flashScreen {
             flashController.flash()
         }
 
         audioEngine.play(
-            response: soundPack.response(for: tier, slapCount: slapCount),
+            response: Self.soundPack.response(for: tier, slapCount: macSmackCount),
             amplitude: event.amplitude,
-            masterVolume: masterVolume,
-            dynamicVolume: dynamicVolume
+            masterVolume: Self.masterVolume,
+            dynamicVolume: Self.dynamicVolume
         )
 
         if claudeWhipEnabled {
-            statusMessage = ClaudeWhip.whip().statusMessage
+            applyClaudeWhipResult(ClaudeWhip.whip())
         }
     }
 
@@ -210,7 +148,7 @@ final class AppModel: ObservableObject {
 
         switch state {
         case .running:
-            if slapCount == 0 {
+            if macSmackCount == 0 {
                 statusMessage = state.description
             }
         case .stopped, .needsRoot, .unavailable, .failed:
@@ -219,11 +157,18 @@ final class AppModel: ObservableObject {
     }
 
     private func applySnapshot(_ snapshot: MotionSnapshot) {
-        liveAcceleration = snapshot.accel
-        liveGyroscope = snapshot.gyro
-        dynamicAcceleration = snapshot.dynamic
-        liveOrientation = snapshot.orientation
-        measuredSampleRate = snapshot.sampleRate
+        lastSeverity = snapshot.dynamicMagnitude >= Self.defaultDetectionSettings.impactThreshold ? "LIVE" : lastSeverity
+    }
+
+    private func applyClaudeWhipResult(_ result: ClaudeWhip.Result) {
+        statusMessage = result.statusMessage
+
+        switch result {
+        case .whipped, .launched:
+            claudeWhipCount += 1
+        case .failed:
+            break
+        }
     }
 }
 

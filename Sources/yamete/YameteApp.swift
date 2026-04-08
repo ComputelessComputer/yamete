@@ -10,12 +10,6 @@ struct YameteApp: App {
         MenuBarExtra(model.menuBarTitle, systemImage: "hand.tap.fill") {
             MenuBarView(model: model)
         }
-        .menuBarExtraStyle(.window)
-
-        Settings {
-            SettingsView(model: model)
-                .frame(width: 380)
-        }
     }
 }
 
