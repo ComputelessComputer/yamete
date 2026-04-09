@@ -1,11 +1,10 @@
 import AppKit
 import AVFoundation
-import CoreAudio
 import Foundation
 
 @MainActor
 final class SpeechAudioEngine: NSObject, AVAudioPlayerDelegate {
-    private var routedPlayer: AVAudioPlayer?
+    private var player: AVAudioPlayer?
     private let soundLibrary = SoundLibrary()
 
     func play(amplitude: Double, masterVolume: Double, dynamicVolume: Bool) {
@@ -13,7 +12,7 @@ final class SpeechAudioEngine: NSObject, AVAudioPlayerDelegate {
         stopCurrentPlayback()
 
         guard let soundURL = soundLibrary.randomSoundURL() else { return }
-        playSound(from: soundURL, volume: Float(volume), deviceUID: PreferredAudioOutputSelector.preferredPersonalAudioDeviceUID())
+        playSound(from: soundURL, volume: Float(volume))
     }
 
     private func scaledVolume(for amplitude: Double, masterVolume: Double) -> Double {
@@ -25,16 +24,15 @@ final class SpeechAudioEngine: NSObject, AVAudioPlayerDelegate {
         return min(max(masterVolume * (0.35 + curved * 0.65), 0), 1)
     }
 
-    private func playSound(from url: URL, volume: Float, deviceUID: String?) {
+    private func playSound(from url: URL, volume: Float) {
         do {
             let player = try AVAudioPlayer(contentsOf: url)
             player.delegate = self
             player.volume = volume
-            player.currentDevice = deviceUID
             player.prepareToPlay()
 
             if player.play() {
-                routedPlayer = player
+                self.player = player
                 return
             }
         } catch {
@@ -43,16 +41,16 @@ final class SpeechAudioEngine: NSObject, AVAudioPlayerDelegate {
     }
 
     private func stopCurrentPlayback() {
-        routedPlayer?.stop()
-        routedPlayer = nil
+        player?.stop()
+        player = nil
     }
 
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         let finishedURL = player.url
         Task { @MainActor [weak self] in
             guard let self else { return }
-            if self.routedPlayer?.url == finishedURL {
-                self.routedPlayer = nil
+            if self.player?.url == finishedURL {
+                self.player = nil
             }
         }
     }
@@ -96,184 +94,6 @@ final class FlashOverlayController {
     }
 }
 
-private struct PreferredAudioOutputSelector {
-    static func preferredPersonalAudioDeviceUID() -> String? {
-        let devices = availableOutputDevices()
-
-        if let preferredDefault = devices.first(where: { $0.isDefault && $0.isPersonalAudio }) {
-            return preferredDefault.uid
-        }
-
-        if let preferred = devices.first(where: \.isPersonalAudio) {
-            return preferred.uid
-        }
-
-        return nil
-    }
-
-    private static func availableOutputDevices() -> [OutputDevice] {
-        let defaultOutputID = deviceIDProperty(
-            objectID: AudioObjectID(kAudioObjectSystemObject),
-            selector: kAudioHardwarePropertyDefaultOutputDevice,
-            scope: kAudioObjectPropertyScopeGlobal
-        )
-
-        return deviceIDs().compactMap { deviceID in
-            guard isAlive(deviceID), hasOutputStreams(deviceID) else {
-                return nil
-            }
-
-            guard let uid = stringProperty(
-                objectID: deviceID,
-                selector: kAudioDevicePropertyDeviceUID,
-                scope: kAudioObjectPropertyScopeGlobal
-            ),
-            let name = stringProperty(
-                objectID: deviceID,
-                selector: kAudioObjectPropertyName,
-                scope: kAudioObjectPropertyScopeGlobal
-            ) else {
-                return nil
-            }
-
-            let transportType = uint32Property(
-                objectID: deviceID,
-                selector: kAudioDevicePropertyTransportType,
-                scope: kAudioObjectPropertyScopeGlobal
-            ) ?? kAudioDeviceTransportTypeUnknown
-
-            return OutputDevice(
-                id: deviceID,
-                uid: uid,
-                name: name,
-                transportType: transportType,
-                isDefault: deviceID == defaultOutputID
-            )
-        }
-    }
-
-    private static func deviceIDs() -> [AudioDeviceID] {
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDevices,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var dataSize: UInt32 = 0
-
-        guard AudioObjectGetPropertyDataSize(
-            AudioObjectID(kAudioObjectSystemObject),
-            &address,
-            0,
-            nil,
-            &dataSize
-        ) == noErr else {
-            return []
-        }
-
-        let count = Int(dataSize) / MemoryLayout<AudioDeviceID>.size
-        var deviceIDs = Array(repeating: AudioDeviceID(), count: count)
-
-        guard AudioObjectGetPropertyData(
-            AudioObjectID(kAudioObjectSystemObject),
-            &address,
-            0,
-            nil,
-            &dataSize,
-            &deviceIDs
-        ) == noErr else {
-            return []
-        }
-
-        return deviceIDs
-    }
-
-    private static func isAlive(_ deviceID: AudioDeviceID) -> Bool {
-        let alive = uint32Property(
-            objectID: deviceID,
-            selector: kAudioDevicePropertyDeviceIsAlive,
-            scope: kAudioObjectPropertyScopeGlobal
-        )
-
-        return alive == 1
-    }
-
-    private static func hasOutputStreams(_ deviceID: AudioDeviceID) -> Bool {
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyStreams,
-            mScope: kAudioObjectPropertyScopeOutput,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var dataSize: UInt32 = 0
-
-        guard AudioObjectGetPropertyDataSize(deviceID, &address, 0, nil, &dataSize) == noErr else {
-            return false
-        }
-
-        return dataSize >= UInt32(MemoryLayout<AudioObjectID>.size)
-    }
-
-    private static func uint32Property(
-        objectID: AudioObjectID,
-        selector: AudioObjectPropertySelector,
-        scope: AudioObjectPropertyScope
-    ) -> UInt32? {
-        var address = AudioObjectPropertyAddress(
-            mSelector: selector,
-            mScope: scope,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var value = UInt32.zero
-        var dataSize = UInt32(MemoryLayout<UInt32>.size)
-
-        guard AudioObjectGetPropertyData(objectID, &address, 0, nil, &dataSize, &value) == noErr else {
-            return nil
-        }
-
-        return value
-    }
-
-    private static func deviceIDProperty(
-        objectID: AudioObjectID,
-        selector: AudioObjectPropertySelector,
-        scope: AudioObjectPropertyScope
-    ) -> AudioDeviceID? {
-        var address = AudioObjectPropertyAddress(
-            mSelector: selector,
-            mScope: scope,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var value = AudioDeviceID.zero
-        var dataSize = UInt32(MemoryLayout<AudioDeviceID>.size)
-
-        guard AudioObjectGetPropertyData(objectID, &address, 0, nil, &dataSize, &value) == noErr else {
-            return nil
-        }
-
-        return value
-    }
-
-    private static func stringProperty(
-        objectID: AudioObjectID,
-        selector: AudioObjectPropertySelector,
-        scope: AudioObjectPropertyScope
-    ) -> String? {
-        var address = AudioObjectPropertyAddress(
-            mSelector: selector,
-            mScope: scope,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var value: Unmanaged<CFString>?
-        var dataSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
-
-        guard AudioObjectGetPropertyData(objectID, &address, 0, nil, &dataSize, &value) == noErr,
-              let value else {
-            return nil
-        }
-
-        return value.takeRetainedValue() as String
-    }
-}
-
 private struct SoundLibrary {
     private let soundURLs: [URL]
 
@@ -294,44 +114,5 @@ private struct SoundLibrary {
 
     func randomSoundURL() -> URL? {
         soundURLs.randomElement()
-    }
-}
-
-private struct OutputDevice {
-    let id: AudioDeviceID
-    let uid: String
-    let name: String
-    let transportType: UInt32
-    let isDefault: Bool
-
-    var isPersonalAudio: Bool {
-        let lowered = name.lowercased()
-        let personalKeywords = [
-            "airpods",
-            "earpods",
-            "earbuds",
-            "headphones",
-            "headset",
-            "beats",
-            "buds",
-        ]
-        let nonPersonalKeywords = [
-            "speaker",
-            "monitor",
-            "display",
-            "tv",
-            "homepod",
-        ]
-
-        if personalKeywords.contains(where: lowered.contains) {
-            return true
-        }
-
-        if nonPersonalKeywords.contains(where: lowered.contains) {
-            return false
-        }
-
-        return transportType == kAudioDeviceTransportTypeBluetooth
-            || transportType == kAudioDeviceTransportTypeBluetoothLE
     }
 }
