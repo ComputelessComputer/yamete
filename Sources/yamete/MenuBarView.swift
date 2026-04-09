@@ -13,7 +13,7 @@ struct MenuBarView: View {
             }
 
             Section {
-                Button(model.isCheckingForUpdates ? "Checking for Updates..." : "Check for Updates") {
+                Button(model.isCheckingForUpdates ? "Updating..." : "Check for Updates") {
                     model.checkForUpdates()
                 }
                 .disabled(model.isCheckingForUpdates)

@@ -126,9 +126,34 @@ final class AppModel: ObservableObject {
 
         Task {
             let result = await UpdateChecker.check(currentVersion: currentVersion)
-            await MainActor.run {
-                isCheckingForUpdates = false
-                applyUpdateCheckResult(result)
+            switch result {
+            case .upToDate(let version):
+                await MainActor.run {
+                    isCheckingForUpdates = false
+                    statusMessage = "Yamete \(version) is up to date."
+                }
+            case .failed(let message):
+                await MainActor.run {
+                    isCheckingForUpdates = false
+                    statusMessage = message
+                }
+            case .updateAvailable(let update):
+                await MainActor.run {
+                    statusMessage = "Downloading Yamete \(update.version)..."
+                }
+
+                let preparation = await UpdateChecker.prepareUpdate(update)
+
+                await MainActor.run {
+                    switch preparation {
+                    case .readyToRelaunch(let version):
+                        statusMessage = "Restarting into Yamete \(version)..."
+                        NSApp.terminate(nil)
+                    case .failed(let message):
+                        isCheckingForUpdates = false
+                        statusMessage = message
+                    }
+                }
             }
         }
     }
@@ -188,17 +213,6 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func applyUpdateCheckResult(_ result: UpdateCheckResult) {
-        switch result {
-        case .upToDate(let version):
-            statusMessage = "Yamete \(version) is up to date."
-        case .updateAvailable(let update):
-            statusMessage = "Update available: \(update.version)"
-            NSWorkspace.shared.open(update.releaseURL)
-        case .failed(let message):
-            statusMessage = message
-        }
-    }
 }
 
 private struct ComboState {
