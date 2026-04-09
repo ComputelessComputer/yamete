@@ -1,5 +1,7 @@
 # Yamete
 
+https://github.com/user-attachments/assets/a0a9cb8c-75cd-406c-8d48-b028a88f0230
+
 Yamete is a native macOS menu bar app that reacts to physical taps on your Mac with spoken responses. This rewrite uses the undocumented Apple SPU accelerometer and gyroscope path described in [olvvier/apple-silicon-accelerometer](https://github.com/olvvier/apple-silicon-accelerometer), but implements the sensor backend natively in Swift instead of shelling out to `spank`.
 
 ## Features
