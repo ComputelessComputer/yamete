@@ -104,11 +104,19 @@ private struct SoundLibrary {
             "anime-moan",
             "dame-dame",
         ]
+        let bundles = [bundle, Bundle.main]
 
         self.soundURLs = candidates.compactMap { name in
-            bundle.url(forResource: name, withExtension: "mp3", subdirectory: "Audio")
-                ?? Bundle.main.url(forResource: name, withExtension: "mp3")
-                ?? Bundle.main.url(forResource: name, withExtension: "mp3", subdirectory: "Audio")
+            for bundle in bundles {
+                if let url = bundle.url(forResource: name, withExtension: "mp3") {
+                    return url
+                }
+                if let url = bundle.url(forResource: name, withExtension: "mp3", subdirectory: "Audio") {
+                    return url
+                }
+            }
+
+            return nil
         }
     }
 
